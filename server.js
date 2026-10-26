@@ -5,42 +5,43 @@ const cors = require('cors');
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
-  }
+  cors: { origin: '*', methods: ['GET', 'POST'] }
 });
 
-// Временное хранилище (в памяти). 
-// Если сервер перезагрузится, история чата очистится.
-let chatHistory = [];
+// Глобальная база данных (в памяти сервера)
+let globalDB = { 
+  users: {}, 
+  messages: [] 
+};
+
+// API для получения базы при старте
+app.get('/api/get-db', (req, res) => {
+  res.json(globalDB);
+});
+
+// API для обновления базы (например, при начислении денег)
+app.post('/api/update-db', (req, res) => {
+  globalDB.users = req.body.users;
+  io.emit('db_updated', globalDB); // Сообщаем всем, что база обновилась
+  res.json({ success: true });
+});
 
 io.on('connection', (socket) => {
-  console.log('Пользователь подключился:', socket.id);
-
   // Отправляем историю чата новому пользователю
-  socket.emit('chat_history', chatHistory);
+  socket.emit('chat_history', globalDB.messages);
 
   // Принимаем новое сообщение
   socket.on('send_message', (data) => {
-    chatHistory.push(data);
-    
-    // Ограничиваем историю 100 последними сообщениями, чтобы не забивать память
-    if (chatHistory.length > 100) chatHistory.shift();
-
-    // Рассылаем сообщение всем подключенным
+    globalDB.messages.push(data);
+    if (globalDB.messages.length > 100) globalDB.messages.shift();
     io.emit('new_message', data);
-  });
-
-  socket.on('disconnect', () => {
-    console.log('Пользователь отключился:', socket.id);
   });
 });
 
-// ОБЯЗАТЕЛЬНО ДЛЯ ХОСТИНГА: слушаем порт, который выдал SpaceWeb
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Сервер запущен на порту ${PORT}`);
